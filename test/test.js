@@ -49,60 +49,60 @@ contract("AssetTrading unit tests", async accounts => {
     });
 
 	it("Test creating a new order", async () => {
-		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, {"value": 10000});
+		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, "0xaaaa", {"value": 10000});
 	});
 
 	it("Test creating a new order with an invalid buy asset type", async () => {
-		await truffleAssert.reverts(contract.makeOrder(1, "BTC", 1, "NONEXISTENT", 1));
+		await truffleAssert.reverts(contract.makeOrder(1, "BTC", 1, "NONEXISTENT", 1, "0xaaaa"));
 	});
 
 	it("Test creating a new order with an invalid sell asset type", async () => {
-		await truffleAssert.reverts(contract.makeOrder(1, "NONEXISTENT", 1, "BTC", 1));
+		await truffleAssert.reverts(contract.makeOrder(1, "NONEXISTENT", 1, "BTC", 1, "0xaaaa"));
 	});
 
 	it("Test starting a trade by taking an order", async () => {
-		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, {"value": 10000});
-		await contract.takeOrder.sendTransaction(1, 1, {"value": 10000});
+		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, "0xaaaa", {"value": 10000});
+		await contract.takeOrder.sendTransaction(1, 1, "0xaaaa", {"value": 10000});
 	});
 
 	it("Test advancing a trade by the taker", async () => {
-		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, {"from": accounts[1], "value": 10000});
-		await contract.takeOrder.sendTransaction(1, 1, {"value": 10000, "from": accounts[2]});
+		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, "0xaaaa", {"from": accounts[1], "value": 10000});
+		await contract.takeOrder.sendTransaction(1, 1, "0xaaaa", {"value": 10000, "from": accounts[2]});
 		await contract.proveTransfer.sendTransaction(1, {"from": accounts[2]});
 	});
 
 	it("Test completing a trade by the maker", async () => {
-		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, {"from": accounts[1], "value": 10000});
-		await contract.takeOrder.sendTransaction(1, 1, {"value": 10000, "from": accounts[2]});
+		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, "0xaaaa", {"from": accounts[1], "value": 10000});
+		await contract.takeOrder.sendTransaction(1, 1, "0xaaaa", {"value": 10000, "from": accounts[2]});
 		await contract.proveTransfer.sendTransaction(1, {"from": accounts[2]});
 		await contract.proveTransfer.sendTransaction(1, {"from": accounts[1]});
 	});
 
 	it("Test claiming taker collateral before the timeout has expired", async () => {
-		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, {"from": accounts[1], "value": 10000});
-		await contract.takeOrder.sendTransaction(1, 1, {"value": 10000, "from": accounts[2]});
+		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, "0xaaaa", {"from": accounts[1], "value": 10000});
+		await contract.takeOrder.sendTransaction(1, 1, "0xaaaa", {"value": 10000, "from": accounts[2]});
 		await advanceTimeAndBlock(120);
 		await truffleAssert.reverts(contract.claimTakerCollateral.sendTransaction(1, {"from": accounts[1]}));
 	});
 
 	it("Test claiming taker collateral", async () => {
-		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, {"from": accounts[1], "value": 10000});
-		await contract.takeOrder.sendTransaction(1, 1, {"value": 10000, "from": accounts[2]});
+		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, "0xaaaa", {"from": accounts[1], "value": 10000});
+		await contract.takeOrder.sendTransaction(1, 1, "0xaaaa", {"value": 10000, "from": accounts[2]});
 		await advanceTimeAndBlock(7200);
 		await contract.claimTakerCollateral.sendTransaction(1, {"from": accounts[1]});
 	});
 
 	it("Test claiming maker collateral before the timeout has expired", async () => {
-		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, {"from": accounts[1], "value": 10000});
-		await contract.takeOrder.sendTransaction(1, 1, {"value": 10000, "from": accounts[2]});
+		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, "0xaaaa", {"from": accounts[1], "value": 10000});
+		await contract.takeOrder.sendTransaction(1, 1, "0xaaaa", {"value": 10000, "from": accounts[2]});
 		await contract.proveTransfer.sendTransaction(1, {"from": accounts[2]});
 		await advanceTimeAndBlock(120);
 		await truffleAssert.reverts(contract.claimMakerCollateral.sendTransaction(1, {"from": accounts[2]}));
 	});
 
 	it("Test claiming maker collateral", async () => {
-		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, {"from": accounts[1], "value": 10000});
-		await contract.takeOrder.sendTransaction(1, 1, {"value": 10000, "from": accounts[2]});
+		await contract.makeOrder.sendTransaction(1, "BTC", 1, "XRP", 1, "0xaaaa", {"from": accounts[1], "value": 10000});
+		await contract.takeOrder.sendTransaction(1, 1, "0xaaaa", {"value": 10000, "from": accounts[2]});
 		await contract.proveTransfer.sendTransaction(1, {"from": accounts[2]});
 		await advanceTimeAndBlock(7200);
 		await contract.claimMakerCollateral.sendTransaction(1, {"from": accounts[2]});

@@ -25,7 +25,7 @@ contract AssetTrading {
         string sellType;
         uint numWatchers;
         bool exists;
-        // TODO add wallet addresses!
+        bytes takerDestinationAddress;
     }
 
     struct Trade {
@@ -36,6 +36,8 @@ contract AssetTrading {
         address[] sellAssetWatchers;
         uint64 timestamp;
         TradeState state;
+        bytes makerDestinationAddress;
+        bytes takerDestinationAddress;
     }
 
     enum TradeState {
@@ -69,7 +71,7 @@ contract AssetTrading {
     /*
     Order management
     */
-    function makeOrder(uint buyAmount, string memory buyType, uint sellAmount, string memory sellType, uint numWatchers) public payable returns (uint id) {
+    function makeOrder(uint buyAmount, string memory buyType, uint sellAmount, string memory sellType, uint numWatchers, bytes memory takerDestinationAddress) public payable returns (uint id) {
         // TODO checks!
         require(supportedAssets[buyType] != 0);
         require(supportedAssets[sellType] != 0);
@@ -83,6 +85,8 @@ contract AssetTrading {
         // make sure we deposit collateral.
         // TODO: for now, this is fixed!
         require(msg.value >= 10000);
+        // make sure we have a destination address
+        require(takerDestinationAddress.length > 0);
 
         lastOrderId++;
 
@@ -94,6 +98,7 @@ contract AssetTrading {
         order.sellType = sellType;
         order.numWatchers = numWatchers;
         order.exists = true;
+        order.takerDestinationAddress = takerDestinationAddress;
         orders[lastOrderId] = order;
 
         makerCollateral[lastOrderId] = msg.value;
@@ -106,7 +111,7 @@ contract AssetTrading {
         delete orders[order_id];
     }
 
-    function takeOrder(uint order_id, uint numWatchers) public payable {
+    function takeOrder(uint order_id, uint numWatchers, bytes memory makerDestinationAddress) public payable {
         // check if the order exists
         require(orders[order_id].exists);
         Order memory order = orders[order_id];
@@ -121,6 +126,8 @@ contract AssetTrading {
         trade.maker = order.creator;
         trade.taker = msg.sender;
         trade.timestamp = uint64(now);
+        trade.makerDestinationAddress = makerDestinationAddress;
+        trade.takerDestinationAddress = order.takerDestinationAddress;
         trades[order_id] = trade;
 
         // delete the order
