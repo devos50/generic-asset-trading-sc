@@ -12,8 +12,8 @@ contract AssetTrading {
     mapping (uint => string) public idToSupportedAsset;
     mapping (uint => mapping(address => bool)) public watchers;
     mapping (uint => address[]) public watchersList;
-    mapping (uint => Order) public orders;
-    mapping (uint => Trade) public trades;
+    mapping (uint => Order) orders;
+    mapping (uint => Trade) trades;
     mapping (uint => uint) private makerCollateral;
     mapping (uint => uint) private takerCollateral;
 
@@ -25,24 +25,22 @@ contract AssetTrading {
         string sellType;
         uint numWatchers;
         bool exists;
+        // TODO add wallet addresses!
     }
 
     struct Trade {
+        Order order;
         address maker;
         address taker;
         address[] buyAssetWatchers;
         address[] sellAssetWatchers;
-        bool exists;
         uint64 timestamp;
         TradeState state;
-        // TODO extend
     }
 
     enum TradeState {
         TakerResponsibility,
-        MakerResponsibility,
-        Complete,
-        Failed
+        MakerResponsibility
     }
 
     constructor() public {
@@ -119,11 +117,14 @@ contract AssetTrading {
 
         // create a new trade
         Trade memory trade;
+        trade.order = orders[order_id];
         trade.maker = order.creator;
         trade.taker = msg.sender;
-        trade.exists = true;
         trade.timestamp = uint64(now);
         trades[order_id] = trade;
+
+        // delete the order
+        delete orders[order_id];
 
         takerCollateral[lastOrderId] = msg.value;
 
@@ -140,8 +141,6 @@ contract AssetTrading {
         for(uint i = 0; i < allSellAssetWatchers.length; i++) {
             trades[order_id].sellAssetWatchers.push(allSellAssetWatchers[i]);
         }
-        
-        // TODO magic
     }
 
     /*
@@ -166,14 +165,10 @@ contract AssetTrading {
     Collateral management
     */
     function claimMakerCollateral(uint order_id) public {
-        // check if the order exists
-        require(orders[order_id].exists);
-        // check if the trade exists
-        require(trades[order_id].exists);
         // can we claim it?
-        require(trades[order_id].timestamp + 1 hours >= now);
+        require(now >= trades[order_id].timestamp + 1 hours);
         // is the trade in the right state?
-        require(trades[order_id].state == TradeState.TakerResponsibility);
+        require(trades[order_id].state == TradeState.MakerResponsibility);
         // are we the taker?
         require(msg.sender == trades[order_id].taker);
 
@@ -182,21 +177,17 @@ contract AssetTrading {
         msg.sender.transfer(amount);
 
         // cleanup the trade
-        trades[order_id].state = TradeState.Failed;
+        delete trades[order_id];
 
         // TODO reward watchers???
     }
 
     function claimTakerCollateral(uint order_id) public {
-        // check if the order exists
-        require(orders[order_id].exists);
-        // check if the trade exists
-        require(trades[order_id].exists);
         // can we claim it?
-        require(trades[order_id].timestamp + 1 hours >= now);
+        require(now >= trades[order_id].timestamp + 1 hours);
         // is the trade in the right state?
-        require(trades[order_id].state == TradeState.MakerResponsibility);
-        // are we the taker?
+        require(trades[order_id].state == TradeState.TakerResponsibility);
+        // are we the maker?
         require(msg.sender == trades[order_id].maker);
 
         uint amount = takerCollateral[order_id];
@@ -204,7 +195,29 @@ contract AssetTrading {
         msg.sender.transfer(amount);
 
         // cleanup the trade
-        trades[order_id].state = TradeState.Failed;
+        delete trades[order_id];
+    }
+
+    /*
+    Trade management
+    */
+    function proveTransfer(uint order_id) public {
+        // check if the trade exists
+        require(trades[order_id].timestamp != 0);
+        // check if we are either the taker or the maker, and the trade is in the right state
+        require((msg.sender == trades[order_id].taker && trades[order_id].state == TradeState.TakerResponsibility) || 
+                (msg.sender == trades[order_id].maker && trades[order_id].state == TradeState.MakerResponsibility));
+
+        if(msg.sender == trades[order_id].taker && trades[order_id].state == TradeState.TakerResponsibility) {
+            trades[order_id].state = TradeState.MakerResponsibility;
+            trades[order_id].timestamp = uint64(now);
+        }
+        else if(msg.sender == trades[order_id].maker && trades[order_id].state == TradeState.MakerResponsibility) {
+            // done, cleanup trade
+            delete trades[order_id];
+        }
+
+        // TODO: include signatures of watchers!
     }
 
     /*
