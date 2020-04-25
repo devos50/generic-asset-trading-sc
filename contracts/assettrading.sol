@@ -5,6 +5,7 @@ contract AssetTrading {
 
     uint public lastOrderId = 0;
     uint public lastAssetId = 0;
+    uint public defaultTxExpirationTime = 3600;
     uint internal nonce = 0;
 
     mapping (string => uint) public supportedAssets;
@@ -13,6 +14,8 @@ contract AssetTrading {
     mapping (uint => address[]) public watchersList;
     mapping (uint => Order) public orders;
     mapping (uint => Trade) public trades;
+    mapping (uint => uint) private makerCollateral;
+    mapping (uint => uint) private takerCollateral;
 
     struct Order {
         address creator;
@@ -20,14 +23,26 @@ contract AssetTrading {
         string buyType;
         uint sellAmount;
         string sellType;
+        uint numWatchers;
+        bool exists;
     }
 
     struct Trade {
-        address makerAddress;
-        address takerAddress;
+        address maker;
+        address taker;
         address[] buyAssetWatchers;
         address[] sellAssetWatchers;
+        bool exists;
+        uint64 timestamp;
+        TradeState state;
         // TODO extend
+    }
+
+    enum TradeState {
+        TakerResponsibility,
+        MakerResponsibility,
+        Complete,
+        Failed
     }
 
     constructor() public {
@@ -56,12 +71,20 @@ contract AssetTrading {
     /*
     Order management
     */
-    function makeOrder(uint buyAmount, string memory buyType, uint sellAmount, string memory sellType) public returns (uint id) {
+    function makeOrder(uint buyAmount, string memory buyType, uint sellAmount, string memory sellType, uint numWatchers) public payable returns (uint id) {
         // TODO checks!
         require(supportedAssets[buyType] != 0);
         require(supportedAssets[sellType] != 0);
-
-        // TODO do we require at least a specific number of watchers?
+        // make sure we buy/sell at least something.
+        require(buyAmount > 0);
+        require(sellAmount > 0);
+        // make sure we have at least one watcher.
+        require(numWatchers > 0);
+        // watchers required by the order creator will act on the chain hosting the buying assets. Maker shre there are enough.
+        require(watchersList[supportedAssets[buyType]].length >= numWatchers);
+        // make sure we deposit collateral.
+        // TODO: for now, this is fixed!
+        require(msg.value >= 10000);
 
         lastOrderId++;
 
@@ -71,7 +94,11 @@ contract AssetTrading {
         order.buyType = buyType;
         order.sellAmount = sellAmount;
         order.sellType = sellType;
+        order.numWatchers = numWatchers;
+        order.exists = true;
         orders[lastOrderId] = order;
+
+        makerCollateral[lastOrderId] = msg.value;
 
         return lastOrderId;
     }
@@ -81,16 +108,24 @@ contract AssetTrading {
         delete orders[order_id];
     }
 
-    function takeOrder(uint order_id) public {
-        //require(orders[order_id]);
-
+    function takeOrder(uint order_id, uint numWatchers) public payable {
+        // check if the order exists
+        require(orders[order_id].exists);
         Order memory order = orders[order_id];
+        // the creator of this order will issue a transaction on the chain hosting sellAssets. Make sure there are enough watchers.
+        require(watchersList[supportedAssets[order.sellType]].length >= numWatchers);
+        // TODO: for now, this is fixed!
+        require(msg.value >= 10000);
 
         // create a new trade
         Trade memory trade;
-        trade.makerAddress = order.creator;
-        trade.takerAddress = msg.sender;
+        trade.maker = order.creator;
+        trade.taker = msg.sender;
+        trade.exists = true;
+        trade.timestamp = uint64(now);
         trades[order_id] = trade;
+
+        takerCollateral[lastOrderId] = msg.value;
 
         // select watchers for both chains
         address[] memory allBuyAssetWatchers = watchersList[supportedAssets[order.buyType]];
@@ -126,6 +161,51 @@ contract AssetTrading {
     }
 
     // TODO remove watcher?
+
+    /*
+    Collateral management
+    */
+    function claimMakerCollateral(uint order_id) public {
+        // check if the order exists
+        require(orders[order_id].exists);
+        // check if the trade exists
+        require(trades[order_id].exists);
+        // can we claim it?
+        require(trades[order_id].timestamp + 1 hours >= now);
+        // is the trade in the right state?
+        require(trades[order_id].state == TradeState.TakerResponsibility);
+        // are we the taker?
+        require(msg.sender == trades[order_id].taker);
+
+        uint amount = makerCollateral[order_id];
+        makerCollateral[order_id] = 0;
+        msg.sender.transfer(amount);
+
+        // cleanup the trade
+        trades[order_id].state = TradeState.Failed;
+
+        // TODO reward watchers???
+    }
+
+    function claimTakerCollateral(uint order_id) public {
+        // check if the order exists
+        require(orders[order_id].exists);
+        // check if the trade exists
+        require(trades[order_id].exists);
+        // can we claim it?
+        require(trades[order_id].timestamp + 1 hours >= now);
+        // is the trade in the right state?
+        require(trades[order_id].state == TradeState.MakerResponsibility);
+        // are we the taker?
+        require(msg.sender == trades[order_id].maker);
+
+        uint amount = takerCollateral[order_id];
+        takerCollateral[order_id] = 0;
+        msg.sender.transfer(amount);
+
+        // cleanup the trade
+        trades[order_id].state = TradeState.Failed;
+    }
 
     /*
     Utilities
